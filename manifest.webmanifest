@@ -1,0 +1,29 @@
+{
+  "name": "MiGasto — Control de gastos",
+  "short_name": "MiGasto",
+  "description": "Control de gastos personales rápido, privado y sin conexión.",
+  "lang": "es-MX",
+  "id": "./#/inicio",
+  "start_url": "./#/inicio",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#070b2c",
+  "theme_color": "#08175f",
+  "orientation": "portrait-primary",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192-v2.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512-v2.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Registrar gasto",
+      "short_name": "Nuevo gasto",
+      "description": "Registrar un nuevo gasto",
+      "url": "./#/nuevo",
+      "icons": [{ "src": "icons/icon-192-v2.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}
