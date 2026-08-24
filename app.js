@@ -3,6 +3,13 @@ import { Analytics } from './js/analytics.js';
 import { Backup } from './js/backup.js';
 import { APP, Dates, Money, normalizeDescription, uid } from './js/utils.js';
 
+function readLimits() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('migasto-limits-v1') || '{}');
+    return { daily: Number.isSafeInteger(saved.daily) && saved.daily > 0 ? saved.daily : 0, weekly: Number.isSafeInteger(saved.weekly) && saved.weekly > 0 ? saved.weekly : 0, monthly: Number.isSafeInteger(saved.monthly) && saved.monthly > 0 ? saved.monthly : 0 };
+  } catch { return { daily: 0, weekly: 0, monthly: 0 }; }
+}
+
 const app = document.querySelector('#app');
 const sheetLayer = document.querySelector('#sheet-layer');
 const toastRegion = document.querySelector('#toast-region');
@@ -10,7 +17,8 @@ const importInput = document.querySelector('#import-input');
 const state = {
   expenses: [], homePeriod: 'month', movementFilter: 'all', search: '', statsPeriod: 'month',
   calendar: new Date(new Date().getFullYear(), new Date().getMonth(), 1), theme: localStorage.getItem('migasto-theme') || 'dark',
-  palette: localStorage.getItem('migasto-palette') || 'ocean', installPrompt: null, saving: false
+  palette: localStorage.getItem('migasto-palette') || 'ocean', amountsHidden: localStorage.getItem('migasto-hide-amounts-v1') === 'true',
+  limits: readLimits(), installPrompt: null, saving: false
 };
 
 const PALETTES = [
@@ -26,6 +34,31 @@ const routeName = () => routes.has(rawRoute()) ? rawRoute() : 'inicio';
 const el = (tag, className = '', text = '') => { const item = document.createElement(tag); if (className) item.className = className; if (text !== '') item.textContent = text; return item; };
 const icon = name => { const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); const use = document.createElementNS('http://www.w3.org/2000/svg', 'use'); use.setAttribute('href', `#i-${name}`); svg.append(use); return svg; };
 const haptic = pattern => { if (navigator.vibrate) navigator.vibrate(pattern); };
+const formatMoney = cents => state.amountsHidden ? '$••••••' : Money.format(cents);
+
+function toggleAmounts() {
+  state.amountsHidden = !state.amountsHidden;
+  localStorage.setItem('migasto-hide-amounts-v1', String(state.amountsHidden));
+  haptic(10); render();
+}
+
+function limitWarningFor(amountCents) {
+  const definitions = [
+    { key: 'daily', period: 'today', label: 'diario' },
+    { key: 'weekly', period: 'week', label: 'semanal' },
+    { key: 'monthly', period: 'month', label: 'mensual' }
+  ];
+  const warnings = definitions.map(definition => {
+    const limit = state.limits[definition.key];
+    if (!limit) return null;
+    const projected = Analytics.summary(state.expenses, definition.period).total + amountCents;
+    return { ...definition, limit, projected, ratio: projected / limit };
+  }).filter(item => item && item.ratio >= .8).sort((a, b) => b.ratio - a.ratio);
+  const warning = warnings[0];
+  if (!warning) return null;
+  if (warning.ratio >= 1) return { message: state.amountsHidden ? `Alcanzaste tu límite ${warning.label}.` : `Alcanzaste tu límite ${warning.label}: ${Money.format(warning.projected)}.`, type: 'error' };
+  return { message: `Estás cerca de tu límite ${warning.label}: ${Math.round(warning.ratio * 100)}%.`, type: 'info' };
+}
 
 function applyAppearance() {
   document.documentElement.dataset.theme = state.theme;
@@ -79,9 +112,9 @@ function toast(message, type = 'info') {
 function go(route) { if (routeName() === route) render(); else location.hash = `#/${route}`; }
 
 function animateMoney(target, cents) {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { target.textContent = Money.format(cents); return; }
+  if (state.amountsHidden || matchMedia('(prefers-reduced-motion: reduce)').matches) { target.textContent = formatMoney(cents); return; }
   const started = performance.now(); const duration = 420;
-  function frame(now) { const p = Math.min(1, (now - started) / duration); const eased = 1 - (1 - p) ** 3; target.textContent = Money.format(Math.round(cents * eased)); if (p < 1) requestAnimationFrame(frame); }
+  function frame(now) { const p = Math.min(1, (now - started) / duration); const eased = 1 - (1 - p) ** 3; target.textContent = formatMoney(Math.round(cents * eased)); if (p < 1) requestAnimationFrame(frame); }
   requestAnimationFrame(frame);
 }
 
@@ -99,10 +132,10 @@ function forceCloseSheet() { sheetLayer.hidden = true; sheetLayer.replaceChildre
 function closeSheet() { if (!sheetLayer.hidden) history.back(); }
 
 function expenseRow(expense) {
-  const row = el('button', 'expense-row'); row.type = 'button'; row.setAttribute('aria-label', `${expense.description}, ${Money.format(expense.amountCents)}`);
+  const row = el('button', 'expense-row'); row.type = 'button'; row.setAttribute('aria-label', `${expense.description}, ${state.amountsHidden ? 'importe oculto' : Money.format(expense.amountCents)}`);
   const badge = el('span', 'expense-badge', expense.description.charAt(0).toLocaleUpperCase('es-MX'));
   const copy = el('span', 'expense-copy'); copy.append(el('strong', '', expense.description), el('small', '', Dates.relative(expense.timestamp)));
-  row.append(badge, copy, el('span', 'expense-amount', `−${Money.format(expense.amountCents)}`)); row.addEventListener('click', () => showExpense(expense.id)); return row;
+  row.append(badge, copy, el('span', 'expense-amount', state.amountsHidden ? '$••••••' : `−${Money.format(expense.amountCents)}`)); row.addEventListener('click', () => showExpense(expense.id)); return row;
 }
 
 function comparisonText(kind) {
@@ -114,9 +147,9 @@ function comparisonText(kind) {
 
 function renderHome() {
   const summary = Analytics.summary(state.expenses, state.homePeriod); const fragment = document.createDocumentFragment();
-  fragment.append(pageHeader(Dates.monthLabel(new Date()), Dates.greeting(), makeButton('Ajustes', 'icon-button', showSettings, 'settings')));
+  fragment.append(pageHeader(Dates.monthLabel(new Date()), `${Dates.greeting()} Angel`, makeButton('Ajustes', 'icon-button', showSettings, 'settings')));
   const hero = el('section', 'hero'); hero.append(el('p', 'hero-label', state.homePeriod === 'today' ? 'Gastado hoy' : state.homePeriod === 'week' ? 'Gastado esta semana' : 'Gastado este mes'));
-  const amount = el('strong', 'hero-amount', Money.format(0)); hero.append(amount, el('span', 'hero-count', `${summary.count} ${summary.count === 1 ? 'movimiento' : 'movimientos'}`));
+  const moneyRow = el('div', 'hero-money-row'); const amount = el('strong', 'hero-amount', formatMoney(0)); const privacy = makeButton(state.amountsHidden ? 'Mostrar importes' : 'Ocultar importes', 'privacy-toggle', toggleAmounts, state.amountsHidden ? 'eye-off' : 'eye'); moneyRow.append(amount, privacy); hero.append(moneyRow, el('span', 'hero-count', `${summary.count} ${summary.count === 1 ? 'movimiento' : 'movimientos'}`));
   hero.append(segmentControl([['today', 'Hoy'], ['week', 'Semana'], ['month', 'Mes']], state.homePeriod, value => { state.homePeriod = value; render(); }, 'Periodo del resumen'));
   const compare = el('p', 'comparison-note', comparisonText(state.homePeriod)); hero.append(compare); fragment.append(hero);
   requestAnimationFrame(() => animateMoney(amount, summary.total));
@@ -134,7 +167,7 @@ function renderMovementGroups(container, items) {
     const group = el('section', 'movement-group'); const heading = el('div', 'group-heading'); const date = Dates.fromKey(key);
     const todayKey = Dates.key(new Date()); const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
     const title = key === todayKey ? 'Hoy' : key === Dates.key(yesterday) ? 'Ayer' : Dates.full(date);
-    heading.append(el('h2', '', title), el('span', '', Money.format(Analytics.total(dayItems)))); group.append(heading); dayItems.forEach(item => group.append(expenseRow(item))); container.append(group);
+    heading.append(el('h2', '', title), el('span', '', formatMoney(Analytics.total(dayItems)))); group.append(heading); dayItems.forEach(item => group.append(expenseRow(item))); container.append(group);
   });
 }
 
@@ -169,8 +202,10 @@ function renderNew() {
     if (!cleanDescription) { descriptionError.textContent = 'Escribe una descripción.'; description.focus(); return; }
     state.saving = true; submit.disabled = true;
     try {
+      const limitWarning = limitWarningFor(amountCents);
       const now = Date.now(); await database.put({ id: uid(), amountCents, description: cleanDescription, timestamp: now, createdAt: new Date(now).toISOString() });
       state.expenses = await database.getAll(); amount.input.value = ''; description.value = ''; haptic(18); toast('Gasto registrado', 'success'); go('inicio');
+      if (limitWarning) setTimeout(() => toast(limitWarning.message, limitWarning.type), 350);
     } catch { toast('No se pudo guardar el gasto.', 'error'); } finally { state.saving = false; submit.disabled = false; }
   }); requestAnimationFrame(() => amount.input.focus()); return fragment;
 }
@@ -179,7 +214,7 @@ function calendarCell(date, month, totals) {
   const button = el('button', 'calendar-day'); button.type = 'button'; if (date.getMonth() !== month) button.classList.add('outside');
   const key = Dates.key(date); const total = totals.get(key) || 0; button.append(el('span', '', String(date.getDate())));
   if (total) { const dot = el('span', 'day-dot'); dot.style.opacity = String(Math.min(.95, .35 + total / Math.max(...totals.values()) * .6)); button.append(dot); }
-  if (key === Dates.key(new Date())) button.classList.add('today'); button.setAttribute('aria-label', `${Dates.full(date)}${total ? `, ${Money.format(total)}` : ', sin gastos'}`); button.addEventListener('click', () => showDay(date)); return button;
+  if (key === Dates.key(new Date())) button.classList.add('today'); button.setAttribute('aria-label', `${Dates.full(date)}${total ? `, ${state.amountsHidden ? 'importe oculto' : Money.format(total)}` : ', sin gastos'}`); button.addEventListener('click', () => showDay(date)); return button;
 }
 
 function renderCalendar() {
@@ -189,7 +224,7 @@ function renderCalendar() {
   controls.append(makeButton('Mes anterior', 'icon-button', () => { state.calendar = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1); render(); }, 'arrow'), el('h1', '', Dates.monthLabel(cursor)));
   const next = makeButton('Mes siguiente', 'icon-button rotate', () => { state.calendar = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1); render(); }, 'arrow'); controls.append(next); fragment.append(controls);
   const summary = el('section', 'calendar-summary surface'); const average = monthItems.length ? Math.round(total / new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate()) : 0;
-  const left = el('div'); left.append(el('span', '', `Total de ${cursor.toLocaleDateString('es-MX', { month: 'long' })}`), el('strong', '', Money.format(total))); const right = el('div'); right.append(el('span', '', 'Promedio diario'), el('strong', '', Money.format(average))); summary.append(left, right); fragment.append(summary);
+  const left = el('div'); left.append(el('span', '', `Total de ${cursor.toLocaleDateString('es-MX', { month: 'long' })}`), el('strong', '', formatMoney(total))); const right = el('div'); right.append(el('span', '', 'Promedio diario'), el('strong', '', formatMoney(average))); summary.append(left, right); fragment.append(summary);
   const calendar = el('section', 'calendar surface'); ['L', 'M', 'M', 'J', 'V', 'S', 'D'].forEach(day => calendar.append(el('span', 'weekday', day)));
   const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1); const offset = (first.getDay() + 6) % 7; const start = new Date(first); start.setDate(first.getDate() - offset);
   for (let i = 0; i < 42; i += 1) { const date = new Date(start); date.setDate(start.getDate() + i); calendar.append(calendarCell(date, cursor.getMonth(), totals)); }
@@ -208,25 +243,25 @@ function renderStats() {
   const summary = Analytics.summary(state.expenses, state.statsPeriod); const fragment = document.createDocumentFragment(); fragment.append(pageHeader('Estadísticas', Dates.periodLabel(state.statsPeriod)));
   fragment.append(segmentControl([['week', 'Semana'], ['month', 'Mes'], ['year', 'Año']], state.statsPeriod, value => { state.statsPeriod = value; render(); }, 'Periodo estadístico'));
   const overview = el('section', 'stats-overview'); overview.append(el('p', '', state.statsPeriod === 'week' ? 'Gastado esta semana' : state.statsPeriod === 'month' ? 'Gastado este mes' : 'Gastado este año'));
-  const bigTotal = el('strong', '', Money.format(0)); overview.append(bigTotal, el('span', 'comparison-note', comparisonText(state.statsPeriod))); fragment.append(overview); requestAnimationFrame(() => animateMoney(bigTotal, summary.total));
+  const bigTotal = el('strong', '', formatMoney(0)); overview.append(bigTotal, el('span', 'comparison-note', comparisonText(state.statsPeriod))); fragment.append(overview); requestAnimationFrame(() => animateMoney(bigTotal, summary.total));
   if (!summary.items.length) { fragment.append(emptyState()); return fragment; }
   const bins = graphBins(state.statsPeriod, summary.items); const max = Math.max(...bins.map(bin => bin.total), 1); const chart = el('section', 'chart-card surface'); chart.append(el('h2', '', 'Evolución de gastos'));
-  const bars = el('div', `bar-chart ${state.statsPeriod}`); bins.forEach((bin, index) => { const wrap = el('div', 'bar-wrap'); const bar = el('button', 'bar'); bar.type = 'button'; bar.style.setProperty('--height', `${Math.max(bin.total ? 8 : 2, (bin.total / max) * 100)}%`); bar.setAttribute('aria-label', `${bin.label}: ${Money.format(bin.total)}`); const value = el('span', 'bar-value', Money.format(bin.total)); bar.append(value); bar.addEventListener('click', () => { bars.querySelectorAll('.bar').forEach(item => item.classList.remove('selected')); bar.classList.add('selected'); }); wrap.append(bar); if (state.statsPeriod !== 'month' || index % 5 === 0 || index === bins.length - 1) wrap.append(el('small', '', bin.label)); bars.append(wrap); }); chart.append(bars); fragment.append(chart);
+  const bars = el('div', `bar-chart ${state.statsPeriod}`); bins.forEach((bin, index) => { const wrap = el('div', 'bar-wrap'); const bar = el('button', 'bar'); bar.type = 'button'; bar.style.setProperty('--height', `${Math.max(bin.total ? 8 : 2, (bin.total / max) * 100)}%`); bar.setAttribute('aria-label', `${bin.label}: ${state.amountsHidden ? 'importe oculto' : Money.format(bin.total)}`); const value = el('span', 'bar-value', formatMoney(bin.total)); bar.append(value); bar.addEventListener('click', () => { bars.querySelectorAll('.bar').forEach(item => item.classList.remove('selected')); bar.classList.add('selected'); }); wrap.append(bar); if (state.statsPeriod !== 'month' || index % 5 === 0 || index === bins.length - 1) wrap.append(el('small', '', bin.label)); bars.append(wrap); }); chart.append(bars); fragment.append(chart);
   const metrics = el('section', 'metric-grid'); const peakDate = summary.peak[0] ? Dates.short(summary.peak[0].timestamp) : '—';
-  [['Total gastado', Money.format(summary.total)], ['Promedio diario', Money.format(summary.average)], ['Día con mayor gasto', `${peakDate} · ${Money.format(summary.peakTotal)}`], ['Número de gastos', String(summary.count)]].forEach(([label, value]) => { const card = el('article', 'metric-card'); card.append(el('span', '', label), el('strong', '', value)); metrics.append(card); }); fragment.append(metrics);
+  [['Total gastado', formatMoney(summary.total)], ['Promedio diario', formatMoney(summary.average)], ['Día con mayor gasto', `${peakDate} · ${formatMoney(summary.peakTotal)}`], ['Número de gastos', String(summary.count)]].forEach(([label, value]) => { const card = el('article', 'metric-card'); card.append(el('span', '', label), el('strong', '', value)); metrics.append(card); }); fragment.append(metrics);
   const frequent = Analytics.byDescription(summary.items).slice(0, 5); const list = el('section', 'surface frequent'); list.append(el('h2', '', 'Gastos frecuentes'));
-  frequent.forEach(item => { const row = el('div', 'frequency-row'); const copy = el('div'); copy.append(el('strong', '', item.label), el('small', '', `${item.count} ${item.count === 1 ? 'vez' : 'veces'}`)); row.append(copy, el('span', '', Money.format(item.total))); list.append(row); }); fragment.append(list); return fragment;
+  frequent.forEach(item => { const row = el('div', 'frequency-row'); const copy = el('div'); copy.append(el('strong', '', item.label), el('small', '', `${item.count} ${item.count === 1 ? 'vez' : 'veces'}`)); row.append(copy, el('span', '', formatMoney(item.total))); list.append(row); }); fragment.append(list); return fragment;
 }
 
 function showDay(date) {
   const items = Analytics.filter(state.expenses, { start: Dates.startDay(date).getTime(), end: Dates.endDay(date).getTime() }); const content = el('div', 'sheet-content');
-  content.append(el('p', 'eyebrow', Dates.full(date)), el('h2', '', `Gastado: ${Money.format(Analytics.total(items))}`), el('p', 'sheet-subtitle', `${items.length} ${items.length === 1 ? 'movimiento' : 'movimientos'}`));
+  content.append(el('p', 'eyebrow', Dates.full(date)), el('h2', '', `Gastado: ${formatMoney(Analytics.total(items))}`), el('p', 'sheet-subtitle', `${items.length} ${items.length === 1 ? 'movimiento' : 'movimientos'}`));
   const list = el('div', 'sheet-list'); if (items.length) items.forEach(item => list.append(expenseRow(item))); else list.append(el('p', 'empty-inline', 'No registraste gastos este día.')); content.append(list); openSheet(content, `Gastos del ${Dates.full(date)}`);
 }
 
 function showExpense(id) {
   const expense = state.expenses.find(item => item.id === id); if (!expense) return; const content = el('div', 'sheet-content expense-detail');
-  const badge = el('span', 'detail-badge', expense.description.charAt(0).toUpperCase()); content.append(badge, el('p', 'eyebrow', Dates.full(expense.timestamp)), el('h2', '', expense.description), el('strong', 'detail-amount', Money.format(expense.amountCents)), el('p', 'sheet-subtitle', Dates.time(expense.timestamp)));
+  const badge = el('span', 'detail-badge', expense.description.charAt(0).toUpperCase()); content.append(badge, el('p', 'eyebrow', Dates.full(expense.timestamp)), el('h2', '', expense.description), el('strong', 'detail-amount', formatMoney(expense.amountCents)), el('p', 'sheet-subtitle', Dates.time(expense.timestamp)));
   const actions = el('div', 'sheet-actions'); actions.append(makeButton('Editar', 'secondary-button', () => showEdit(expense.id), 'edit'), makeButton('Eliminar', 'danger-button', () => confirmDelete(expense.id), 'trash')); content.append(actions); openSheet(content, 'Detalle del gasto');
 }
 
@@ -247,6 +282,23 @@ function settingRow(iconName, title, subtitle, handler, danger = false) {
   const button = makeButton('', `setting-row${danger ? ' danger' : ''}`, handler); button.replaceChildren(); button.append(icon(iconName)); const copy = el('span'); copy.append(el('strong', '', title)); if (subtitle) copy.append(el('small', '', subtitle)); button.append(copy, icon('chevron')); return button;
 }
 
+function limitsSection() {
+  const section = el('section', 'settings-section'); section.append(el('h3', '', 'Límites de gasto'), el('p', 'settings-hint', 'Recibirás un aviso al usar 80% y al alcanzar el límite. Déjalo vacío para desactivarlo.'));
+  const form = el('form', 'limits-form'); form.noValidate = true; const fields = {};
+  [['daily', 'Diario'], ['weekly', 'Semanal'], ['monthly', 'Mensual']].forEach(([key, label]) => {
+    const field = el('label', 'limit-field'); field.append(el('span', '', label)); const inputWrap = el('span', 'limit-input-wrap'); inputWrap.append(el('span', '', '$'));
+    const input = el('input'); input.type = 'text'; input.inputMode = 'decimal'; input.placeholder = 'Sin límite'; input.autocomplete = 'off'; input.value = state.limits[key] ? (state.limits[key] / 100).toFixed(2) : ''; input.setAttribute('aria-label', `Límite ${label.toLocaleLowerCase('es-MX')}`); inputWrap.append(input); field.append(inputWrap); form.append(field); fields[key] = input;
+  });
+  const error = el('p', 'field-error limit-error'); const save = makeButton('Guardar límites', 'secondary-button limits-save', null, 'check'); save.type = 'submit'; form.append(error, save);
+  form.addEventListener('submit', event => {
+    event.preventDefault(); const next = {}; let invalid = false;
+    Object.entries(fields).forEach(([key, input]) => { const raw = input.value.trim(); if (!raw || /^[0.,]+$/.test(raw)) next[key] = 0; else { const parsed = Money.parse(raw); if (!parsed) invalid = true; else next[key] = parsed; } });
+    if (invalid) { error.textContent = 'Revisa los límites. Usa cantidades mayores que cero.'; return; }
+    state.limits = next; localStorage.setItem('migasto-limits-v1', JSON.stringify(next)); haptic(10); toast('Límites guardados', 'success'); showSettings();
+  });
+  section.append(form); return section;
+}
+
 function showSettings() {
   const content = el('div', 'sheet-content settings'); content.append(el('h2', '', 'Ajustes'), el('p', 'privacy-note', 'Tus gastos se almacenan únicamente en este dispositivo. Esta aplicación no envía tus datos a ningún servidor.'));
   const data = el('section', 'settings-section'); data.append(el('h3', '', 'Datos'), settingRow('download', 'Exportar datos', 'Respaldo JSON completo', () => { Backup.exportJSON(state.expenses); toast('Respaldo descargado', 'success'); }), settingRow('download', 'Exportar CSV', 'Compatible con hojas de cálculo', () => { Backup.exportCSV(state.expenses); toast('CSV descargado', 'success'); }), settingRow('upload', 'Importar respaldo', 'Combinar o reemplazar datos', () => importInput.click()));
@@ -255,7 +307,7 @@ function showSettings() {
   PALETTES.forEach(palette => { const option = el('button', `palette-option ${palette.id}${state.palette === palette.id ? ' active' : ''}`); option.type = 'button'; option.setAttribute('aria-pressed', String(state.palette === palette.id)); option.append(el('span', 'palette-swatch'), el('span', '', palette.label)); option.addEventListener('click', () => { state.palette = palette.id; localStorage.setItem('migasto-palette', palette.id); applyAppearance(); showSettings(); }); paletteGrid.append(option); });
   appearance.append(paletteLabel, paletteGrid);
   const about = el('section', 'settings-section'); about.append(el('h3', '', 'Aplicación'), settingRow('download', isStandalone() ? 'MiGasto instalada' : 'Instalar MiGasto', isStandalone() ? 'Se abre como aplicación independiente' : 'Instálala para usarla sin navegador', requestInstall)); const info = el('div', 'app-info'); info.append(el('span', '', APP.name), el('small', '', `Versión ${APP.version} · PWA privada y offline`)); about.append(info);
-  const danger = el('section', 'settings-section danger-zone'); danger.append(el('h3', '', 'Zona peligrosa'), settingRow('trash', 'Eliminar todos los datos', 'Requiere confirmación', confirmClear, true)); content.append(data, appearance, about, danger); openSheet(content, 'Ajustes');
+  const danger = el('section', 'settings-section danger-zone'); danger.append(el('h3', '', 'Zona peligrosa'), settingRow('trash', 'Eliminar todos los datos', 'Requiere confirmación', confirmClear, true)); content.append(data, appearance, limitsSection(), about, danger); openSheet(content, 'Ajustes');
 }
 
 function confirmClear() {

@@ -48,7 +48,12 @@ svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width:
 
 .hero { padding: clamp(40px, 9vh, 74px) 0 34px; text-align: center; }
 .hero-label, .hero-count { display: block; margin: 0; color: var(--text-secondary); font-size: .9rem; }
-.hero-amount { display: block; min-height: 1.2em; margin: 8px 0 7px; font-size: clamp(3.2rem, 15vw, 6rem); line-height: 1.03; letter-spacing: -.065em; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hero-money-row { display: grid; grid-template-columns: minmax(0, auto) 44px; align-items: center; justify-content: center; gap: 9px; margin: 8px 0 7px; }
+.hero-amount { display: block; min-height: 1.2em; margin: 0; font-size: clamp(3.2rem, 15vw, 6rem); line-height: 1.03; letter-spacing: -.065em; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.privacy-toggle { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid var(--stroke-soft); border-radius: 50%; color: var(--text-secondary); background: color-mix(in srgb, var(--surface-2) 78%, transparent); cursor: pointer; transition: color .2s ease, background .2s ease, transform .16s ease; }
+.privacy-toggle:hover { color: var(--text-primary); background: var(--surface-active); }
+.privacy-toggle > span { display: none; }
+.privacy-toggle svg { width: 21px; height: 21px; }
 .segments { display: inline-flex; max-width: 100%; margin-top: 25px; padding: 4px; border: 1px solid var(--stroke-soft); border-radius: 18px; background: rgba(7, 15, 55, .48); }
 .segments button { min-width: 70px; min-height: 40px; padding: 8px 15px; border: 0; border-radius: 14px; color: var(--text-secondary); background: transparent; cursor: pointer; transition: color .2s ease, background .2s ease, transform .16s ease; }
 .segments button.active { color: var(--text-primary); background: var(--surface-active); box-shadow: 0 4px 14px rgba(3, 8, 35, .18); }
@@ -197,6 +202,13 @@ input:focus::placeholder { opacity: 0; }
 .setting-choice .segments { margin: 0; }
 .setting-choice .segments button { min-width: auto; padding-inline: 12px; }
 .setting-label { margin: 18px 0 10px; color: var(--text-secondary); font-size: .86rem; }
+.settings-hint { margin: 0 0 12px; color: var(--text-muted); font-size: .76rem; line-height: 1.5; }
+.limits-form { display: grid; gap: 8px; }
+.limit-field { display: flex; align-items: center; justify-content: space-between; gap: 15px; min-height: 58px; padding: 6px 5px; border-bottom: 1px solid var(--stroke-soft); color: var(--text-secondary); font-size: .86rem; }
+.limit-input-wrap { display: flex; align-items: center; width: min(48%, 180px); min-height: 43px; padding: 0 12px; border: 1px solid var(--stroke-soft); border-radius: 14px; color: var(--text-muted); background: rgba(255, 255, 255, .035); }
+.limit-input-wrap input { width: 100%; min-width: 0; padding: 0 0 0 5px; border: 0; outline: 0; color: var(--text-primary); background: transparent; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.limit-error { margin-bottom: 0; }
+.limits-save { width: 100%; margin-top: 2px; }
 .palette-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .palette-option { display: flex; flex-direction: column; align-items: center; gap: 7px; min-height: 72px; padding: 9px 4px; border: 1px solid transparent; border-radius: 16px; color: var(--text-muted); background: rgba(255, 255, 255, .025); font-size: .68rem; cursor: pointer; }
 .palette-option.active { border-color: color-mix(in srgb, var(--accent) 48%, transparent); color: var(--text-primary); background: color-mix(in srgb, var(--accent) 12%, transparent); }

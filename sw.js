@@ -1,4 +1,4 @@
-const CACHE = 'migasto-shell-v1.2.3';
+const CACHE = 'migasto-shell-v1.3.2';
 const SCOPE = self.registration.scope;
 const scoped = path => new URL(path, SCOPE).href;
 const INDEX = scoped('index.html');
