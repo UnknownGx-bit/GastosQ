@@ -9,8 +9,16 @@ const toastRegion = document.querySelector('#toast-region');
 const importInput = document.querySelector('#import-input');
 const state = {
   expenses: [], homePeriod: 'month', movementFilter: 'all', search: '', statsPeriod: 'month',
-  calendar: new Date(new Date().getFullYear(), new Date().getMonth(), 1), theme: localStorage.getItem('migasto-theme') || 'dark', saving: false
+  calendar: new Date(new Date().getFullYear(), new Date().getMonth(), 1), theme: localStorage.getItem('migasto-theme') || 'dark',
+  palette: localStorage.getItem('migasto-palette') || 'ocean', installPrompt: null, saving: false
 };
+
+const PALETTES = [
+  { id: 'ocean', label: 'Océano', themeColor: '#1738a0' },
+  { id: 'violet', label: 'Violeta', themeColor: '#55279a' },
+  { id: 'emerald', label: 'Esmeralda', themeColor: '#08706f' },
+  { id: 'ruby', label: 'Rubí', themeColor: '#8c315d' }
+];
 
 const routes = new Set(['inicio', 'movimientos', 'nuevo', 'calendario', 'estadisticas']);
 const rawRoute = () => location.hash.replace('#/', '').split('?')[0];
@@ -19,9 +27,27 @@ const el = (tag, className = '', text = '') => { const item = document.createEle
 const icon = name => { const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); const use = document.createElementNS('http://www.w3.org/2000/svg', 'use'); use.setAttribute('href', `#i-${name}`); svg.append(use); return svg; };
 const haptic = pattern => { if (navigator.vibrate) navigator.vibrate(pattern); };
 
+function applyAppearance() {
+  document.documentElement.dataset.theme = state.theme;
+  document.documentElement.dataset.palette = state.palette;
+  const palette = PALETTES.find(item => item.id === state.palette) || PALETTES[0];
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', palette.themeColor);
+}
+
+function isStandalone() { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
+
+async function requestInstall() {
+  if (isStandalone()) { toast('MiGasto ya está instalada', 'success'); return; }
+  if (!state.installPrompt) { toast('En Chrome abre el menú ⋮ y elige “Instalar aplicación”.', 'info'); return; }
+  state.installPrompt.prompt();
+  const choice = await state.installPrompt.userChoice;
+  state.installPrompt = null;
+  toast(choice.outcome === 'accepted' ? 'MiGasto se está instalando' : 'Instalación cancelada', choice.outcome === 'accepted' ? 'success' : 'info');
+}
+
 function makeButton(label, className, handler, iconName) {
   const button = el('button', className); button.type = 'button';
-  if (iconName) button.append(icon(iconName)); button.append(el('span', '', label));
+  if (iconName) { button.append(icon(iconName)); button.setAttribute('aria-label', label); } button.append(el('span', '', label));
   if (handler) button.addEventListener('click', handler); return button;
 }
 
@@ -38,8 +64,8 @@ function segmentControl(options, active, onChange, label) {
 }
 
 function emptyState(action = true, message = 'Registra tu primera compra para comenzar.') {
-  const card = el('div', 'empty-state'); const mark = el('span', 'empty-mark'); mark.append(icon('plus'));
-  card.append(mark, el('h3', '', 'Todavía no hay gastos'), el('p', '', message));
+  const card = el('div', `empty-state${action ? '' : ' passive'}`); const mark = el('span', 'empty-mark'); mark.append(icon('plus'));
+  if (action) card.append(mark); card.append(el('h3', '', 'Todavía no hay gastos'), el('p', '', message));
   if (action) card.append(makeButton('Registrar gasto', 'primary-button', () => go('nuevo'), 'plus'));
   return card;
 }
@@ -95,14 +121,8 @@ function renderHome() {
   const compare = el('p', 'comparison-note', comparisonText(state.homePeriod)); hero.append(compare); fragment.append(hero);
   requestAnimationFrame(() => animateMoney(amount, summary.total));
 
-  const actions = el('section', 'quick-actions');
-  [['plus', 'Nuevo gasto', 'nuevo', true], ['calendar', 'Calendario', 'calendario'], ['chart', 'Estadísticas', 'estadisticas'], ['list', 'Movimientos', 'movimientos']].forEach(([iconName, label, route, primary]) => {
-    const action = makeButton(label, primary ? 'quick-action primary' : 'quick-action', () => go(route), iconName); actions.append(action);
-  }); fragment.append(actions);
-
-  const recent = el('section', 'surface recent-card'); const recentHeader = el('div', 'section-heading'); recentHeader.append(el('h2', '', 'Movimientos recientes'));
-  if (summary.items.length) recentHeader.append(makeButton('Ver todos', 'text-button', () => go('movimientos'))); recent.append(recentHeader);
-  if (!summary.items.length) recent.append(emptyState()); else summary.items.slice(0, 5).forEach(item => recent.append(expenseRow(item)));
+  const recent = el('section', 'surface recent-card'); const recentHeader = el('div', 'section-heading'); recentHeader.append(el('h2', '', 'Movimientos recientes')); recent.append(recentHeader);
+  if (!summary.items.length) recent.append(emptyState(false)); else summary.items.slice(0, 5).forEach(item => recent.append(expenseRow(item)));
   fragment.append(recent); return fragment;
 }
 
@@ -230,8 +250,11 @@ function settingRow(iconName, title, subtitle, handler, danger = false) {
 function showSettings() {
   const content = el('div', 'sheet-content settings'); content.append(el('h2', '', 'Ajustes'), el('p', 'privacy-note', 'Tus gastos se almacenan únicamente en este dispositivo. Esta aplicación no envía tus datos a ningún servidor.'));
   const data = el('section', 'settings-section'); data.append(el('h3', '', 'Datos'), settingRow('download', 'Exportar datos', 'Respaldo JSON completo', () => { Backup.exportJSON(state.expenses); toast('Respaldo descargado', 'success'); }), settingRow('download', 'Exportar CSV', 'Compatible con hojas de cálculo', () => { Backup.exportCSV(state.expenses); toast('CSV descargado', 'success'); }), settingRow('upload', 'Importar respaldo', 'Combinar o reemplazar datos', () => importInput.click()));
-  const appearance = el('section', 'settings-section'); appearance.append(el('h3', '', 'Apariencia')); const theme = el('div', 'setting-choice'); theme.append(el('span', '', 'Tema'), segmentControl([['system', 'Sistema'], ['dark', 'Oscuro']], state.theme, value => { state.theme = value; localStorage.setItem('migasto-theme', value); document.documentElement.dataset.theme = value; showSettings(); }, 'Tema de apariencia')); appearance.append(theme);
-  const about = el('section', 'settings-section'); about.append(el('h3', '', 'Aplicación')); const info = el('div', 'app-info'); info.append(el('span', '', APP.name), el('small', '', `Versión ${APP.version} · PWA privada y offline`)); about.append(info);
+  const appearance = el('section', 'settings-section'); appearance.append(el('h3', '', 'Apariencia')); const theme = el('div', 'setting-choice'); theme.append(el('span', '', 'Tema'), segmentControl([['system', 'Sistema'], ['dark', 'Oscuro']], state.theme, value => { state.theme = value; localStorage.setItem('migasto-theme', value); applyAppearance(); showSettings(); }, 'Tema de apariencia')); appearance.append(theme);
+  const paletteLabel = el('p', 'setting-label', 'Color de la aplicación'); const paletteGrid = el('div', 'palette-grid'); paletteGrid.setAttribute('role', 'group'); paletteGrid.setAttribute('aria-label', 'Color de la aplicación');
+  PALETTES.forEach(palette => { const option = el('button', `palette-option ${palette.id}${state.palette === palette.id ? ' active' : ''}`); option.type = 'button'; option.setAttribute('aria-pressed', String(state.palette === palette.id)); option.append(el('span', 'palette-swatch'), el('span', '', palette.label)); option.addEventListener('click', () => { state.palette = palette.id; localStorage.setItem('migasto-palette', palette.id); applyAppearance(); showSettings(); }); paletteGrid.append(option); });
+  appearance.append(paletteLabel, paletteGrid);
+  const about = el('section', 'settings-section'); about.append(el('h3', '', 'Aplicación'), settingRow('download', isStandalone() ? 'MiGasto instalada' : 'Instalar MiGasto', isStandalone() ? 'Se abre como aplicación independiente' : 'Instálala para usarla sin navegador', requestInstall)); const info = el('div', 'app-info'); info.append(el('span', '', APP.name), el('small', '', `Versión ${APP.version} · PWA privada y offline`)); about.append(info);
   const danger = el('section', 'settings-section danger-zone'); danger.append(el('h3', '', 'Zona peligrosa'), settingRow('trash', 'Eliminar todos los datos', 'Requiere confirmación', confirmClear, true)); content.append(data, appearance, about, danger); openSheet(content, 'Ajustes');
 }
 
@@ -253,14 +276,22 @@ function render() {
 }
 
 async function init() {
-  document.documentElement.dataset.theme = state.theme; await database.open(); state.expenses = await database.getAll();
+  window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); state.installPrompt = event; });
+  window.addEventListener('appinstalled', () => { state.installPrompt = null; toast('MiGasto instalada correctamente', 'success'); });
+  applyAppearance(); await database.open(); state.expenses = await database.getAll();
   if (!location.hash || !routes.has(rawRoute())) location.replace('#/inicio'); else render();
   window.addEventListener('hashchange', () => { if (!sheetLayer.hidden) forceCloseSheet(); if (!routes.has(rawRoute())) { location.replace('#/inicio'); return; } render(); });
   window.addEventListener('popstate', () => { if (!sheetLayer.hidden) forceCloseSheet(); });
   window.addEventListener('keydown', event => { if (event.key === 'Escape' && !sheetLayer.hidden) closeSheet(); });
   importInput.addEventListener('change', () => handleImport(importInput.files[0]));
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    window.addEventListener('load', async () => { try { const registration = await navigator.serviceWorker.register('./sw.js'); registration.addEventListener('updatefound', () => { const worker = registration.installing; worker?.addEventListener('statechange', () => { if (worker.state === 'installed' && navigator.serviceWorker.controller) toast('Actualización lista. Se aplicará al volver a abrir.', 'info'); }); }); } catch { /* La app sigue funcionando sin instalación PWA. */ } });
+    window.addEventListener('load', async () => {
+      try {
+        const registration = await navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' });
+        await registration.update();
+        registration.addEventListener('updatefound', () => { const worker = registration.installing; worker?.addEventListener('statechange', () => { if (worker.state === 'installed' && navigator.serviceWorker.controller) toast('Actualización lista. Se aplicará al volver a abrir.', 'info'); }); });
+      } catch { toast('No se pudo preparar el modo sin conexión.', 'error'); }
+    });
   }
 }
 

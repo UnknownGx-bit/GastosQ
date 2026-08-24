@@ -12,6 +12,8 @@ MiGasto es una PWA mobile-first para registrar y analizar gastos personales de f
 - Estadísticas reales, comparación con el periodo anterior y gastos frecuentes.
 - Respaldo JSON, exportación CSV e importación con combinación o reemplazo.
 - PWA instalable, adaptable a subcarpetas de GitHub Pages y funcional sin conexión.
+- Tipografía Inter incluida localmente para conservar el mismo peso visual al instalarla.
+- Cuatro paletas mate configurables: Océano, Violeta, Esmeralda y Rubí.
 - Accesibilidad, safe areas, soporte de teclado y reducción de movimiento.
 
 ## Estructura
@@ -27,6 +29,7 @@ js/backup.js             Exportación e importación
 manifest.webmanifest     Instalación PWA
 sw.js                    Caché offline y actualización
 icons/                   Iconos 192, 512 y fuente SVG
+fonts/                   Tipografía Inter local y licencia OFL
 ```
 
 ## Ejecutar localmente
@@ -68,6 +71,8 @@ Todas las rutas son relativas y la navegación usa hashes (`#/inicio`, `#/calend
 4. Confirma la instalación.
 
 Después de una primera carga completa, el service worker conserva la interfaz esencial para abrir la app, registrar gastos y consultar datos sin internet.
+
+Si Chrome solo muestra **Agregar a pantalla principal**, confirma que subiste también `manifest.webmanifest`, `sw.js`, las carpetas `icons`, `fonts` y `js`. Abre la página publicada mediante HTTPS, recárgala una vez y usa **Ajustes → Instalar MiGasto** o el menú de Chrome → **Instalar aplicación**. Si había una instalación anterior, desinstálala sin borrar los datos del sitio y vuelve a instalarla después de publicar esta versión.
 
 ## Privacidad y respaldos
 
