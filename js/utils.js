@@ -1,4 +1,4 @@
-export const APP = Object.freeze({ name: 'MiGasto', version: '1.3.0', maxDescription: 100 });
+export const APP = Object.freeze({ name: 'MiGasto', version: '1.4.0', maxDescription: 100 });
 
 const currency = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 });
 const monthYear = new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' });

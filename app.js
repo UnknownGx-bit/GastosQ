@@ -17,16 +17,23 @@ const importInput = document.querySelector('#import-input');
 const state = {
   expenses: [], homePeriod: 'month', movementFilter: 'all', search: '', statsPeriod: 'month',
   calendar: new Date(new Date().getFullYear(), new Date().getMonth(), 1), theme: localStorage.getItem('migasto-theme') || 'dark',
-  palette: localStorage.getItem('migasto-palette') || 'ocean', amountsHidden: localStorage.getItem('migasto-hide-amounts-v1') === 'true',
+  palette: localStorage.getItem('migasto-palette') || 'cobalt', amountsHidden: localStorage.getItem('migasto-hide-amounts-v1') === 'true',
   limits: readLimits(), installPrompt: null, saving: false
 };
 
 const PALETTES = [
-  { id: 'ocean', label: 'Océano', themeColor: '#1738a0' },
-  { id: 'violet', label: 'Violeta', themeColor: '#55279a' },
-  { id: 'emerald', label: 'Esmeralda', themeColor: '#08706f' },
-  { id: 'ruby', label: 'Rubí', themeColor: '#8c315d' }
+  { id: 'cobalt', label: 'Cobalto', themeColor: '#244db2' },
+  { id: 'aurora', label: 'Aurora', themeColor: '#6239aa' },
+  { id: 'jade', label: 'Jade', themeColor: '#087568' },
+  { id: 'amber', label: 'Ámbar', themeColor: '#965916' },
+  { id: 'cherry', label: 'Cereza', themeColor: '#983652' },
+  { id: 'graphite', label: 'Grafito', themeColor: '#3a4663' }
 ];
+
+if (!PALETTES.some(palette => palette.id === state.palette)) {
+  state.palette = PALETTES[0].id;
+  localStorage.setItem('migasto-palette', state.palette);
+}
 
 const routes = new Set(['inicio', 'movimientos', 'nuevo', 'calendario', 'estadisticas']);
 const rawRoute = () => location.hash.replace('#/', '').split('?')[0];
@@ -56,8 +63,8 @@ function limitWarningFor(amountCents) {
   }).filter(item => item && item.ratio >= .8).sort((a, b) => b.ratio - a.ratio);
   const warning = warnings[0];
   if (!warning) return null;
-  if (warning.ratio >= 1) return { message: state.amountsHidden ? `Alcanzaste tu límite ${warning.label}.` : `Alcanzaste tu límite ${warning.label}: ${Money.format(warning.projected)}.`, type: 'error' };
-  return { message: `Estás cerca de tu límite ${warning.label}: ${Math.round(warning.ratio * 100)}%.`, type: 'info' };
+  if (warning.ratio >= 1) return { message: state.amountsHidden ? `Alcanzaste tu límite ${warning.label}.` : `Alcanzaste tu límite ${warning.label}: ${Money.format(warning.projected)}.`, type: 'emergency' };
+  return { message: `Alerta: estás cerca de tu límite ${warning.label} (${Math.round(warning.ratio * 100)}%).`, type: 'emergency' };
 }
 
 function applyAppearance() {
@@ -104,8 +111,9 @@ function emptyState(action = true, message = 'Registra tu primera compra para co
 }
 
 function toast(message, type = 'info') {
-  const item = el('div', `toast ${type}`); item.setAttribute('role', type === 'error' ? 'alert' : 'status');
-  item.append(icon(type === 'success' ? 'check' : type === 'error' ? 'close' : 'plus'), el('span', '', message)); toastRegion.append(item);
+  const isAlert = type === 'error' || type === 'emergency';
+  const item = el('div', `toast ${type}`); item.setAttribute('role', isAlert ? 'alert' : 'status');
+  item.append(icon(type === 'success' ? 'check' : isAlert ? 'close' : 'plus'), el('span', '', message)); toastRegion.append(item);
   setTimeout(() => { item.classList.add('leaving'); setTimeout(() => item.remove(), 220); }, 2400);
 }
 
@@ -262,7 +270,7 @@ function showDay(date) {
 function showExpense(id) {
   const expense = state.expenses.find(item => item.id === id); if (!expense) return; const content = el('div', 'sheet-content expense-detail');
   const badge = el('span', 'detail-badge', expense.description.charAt(0).toUpperCase()); content.append(badge, el('p', 'eyebrow', Dates.full(expense.timestamp)), el('h2', '', expense.description), el('strong', 'detail-amount', formatMoney(expense.amountCents)), el('p', 'sheet-subtitle', Dates.time(expense.timestamp)));
-  const actions = el('div', 'sheet-actions'); actions.append(makeButton('Editar', 'secondary-button', () => showEdit(expense.id), 'edit'), makeButton('Eliminar', 'danger-button', () => confirmDelete(expense.id), 'trash')); content.append(actions); openSheet(content, 'Detalle del gasto');
+  const actions = el('div', 'sheet-actions'); actions.append(makeButton('Editar', 'secondary-button', () => showEdit(expense.id), 'edit'), makeButton('Eliminar', 'danger-button', () => deleteExpense(expense.id), 'trash')); content.append(actions); openSheet(content, 'Detalle del gasto');
 }
 
 function showEdit(id) {
@@ -273,9 +281,17 @@ function showEdit(id) {
   form.addEventListener('submit', async event => { event.preventDefault(); const amountCents = Money.parse(amount.input.value); const clean = normalizeDescription(description.value); const timestamp = new Date(dateInput.value).getTime(); if (!amountCents || !clean || !Number.isFinite(timestamp)) { error.textContent = 'Revisa el monto, la descripción y la fecha.'; return; } await database.put({ ...expense, amountCents, description: clean, timestamp }); state.expenses = await database.getAll(); closeSheet(); toast('Movimiento actualizado', 'success'); render(); }); openSheet(content, 'Editar gasto');
 }
 
-function confirmDelete(id) {
-  const content = el('div', 'sheet-content confirm-content'); const mark = el('span', 'danger-mark'); mark.append(icon('trash')); content.append(mark, el('h2', '', '¿Eliminar este gasto?'), el('p', '', 'Esta acción no se puede deshacer.'));
-  const actions = el('div', 'sheet-actions'); actions.append(makeButton('Cancelar', 'secondary-button', closeSheet), makeButton('Eliminar', 'danger-button', async () => { await database.remove(id); state.expenses = await database.getAll(); closeSheet(); haptic([15, 30, 15]); toast('Movimiento eliminado', 'success'); render(); }, 'trash')); content.append(actions); openSheet(content, 'Confirmar eliminación');
+async function deleteExpense(id) {
+  try {
+    await database.remove(id);
+    state.expenses = await database.getAll();
+    closeSheet();
+    haptic([15, 30, 15]);
+    toast('Movimiento eliminado', 'success');
+    render();
+  } catch {
+    toast('No se pudo eliminar el movimiento.', 'error');
+  }
 }
 
 function settingRow(iconName, title, subtitle, handler, danger = false) {
@@ -330,21 +346,37 @@ function render() {
 async function init() {
   window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); state.installPrompt = event; });
   window.addEventListener('appinstalled', () => { state.installPrompt = null; toast('MiGasto instalada correctamente', 'success'); });
-  applyAppearance(); await database.open(); state.expenses = await database.getAll();
+  applyAppearance();
+  try {
+    await database.open();
+    state.expenses = await database.getAll();
+  } catch {
+    state.expenses = [];
+    toast('No se pudieron leer los gastos guardados.', 'error');
+  }
   if (!location.hash || !routes.has(rawRoute())) location.replace('#/inicio'); else render();
   window.addEventListener('hashchange', () => { if (!sheetLayer.hidden) forceCloseSheet(); if (!routes.has(rawRoute())) { location.replace('#/inicio'); return; } render(); });
   window.addEventListener('popstate', () => { if (!sheetLayer.hidden) forceCloseSheet(); });
   window.addEventListener('keydown', event => { if (event.key === 'Escape' && !sheetLayer.hidden) closeSheet(); });
   importInput.addEventListener('change', () => handleImport(importInput.files[0]));
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    window.addEventListener('load', async () => {
-      try {
-        const registration = await navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' });
-        await registration.update();
-        registration.addEventListener('updatefound', () => { const worker = registration.installing; worker?.addEventListener('statechange', () => { if (worker.state === 'installed' && navigator.serviceWorker.controller) toast('Actualización lista. Se aplicará al volver a abrir.', 'info'); }); });
-      } catch { toast('No se pudo preparar el modo sin conexión.', 'error'); }
+}
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  try {
+    const registration = await navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' });
+    const watchWorker = worker => worker?.addEventListener('statechange', () => {
+      if (worker.state === 'installed' && navigator.serviceWorker.controller) toast('Actualización lista. Se aplicará al volver a abrir.', 'info');
     });
+    watchWorker(registration.installing);
+    registration.addEventListener('updatefound', () => {
+      watchWorker(registration.installing);
+    });
+    await registration.update();
+  } catch {
+    toast('No se pudo preparar el modo sin conexión.', 'error');
   }
 }
 
+registerServiceWorker();
 init();

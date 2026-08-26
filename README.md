@@ -7,15 +7,16 @@ MiGasto es una PWA mobile-first para registrar y analizar gastos personales de f
 - Registro ultrarrápido con solo monto y descripción.
 - Totales de hoy, semana (lunes a domingo), mes y año.
 - Movimientos agrupados por día, búsqueda y filtros.
-- Edición, cambio avanzado de fecha y eliminación confirmada.
+- Edición, cambio avanzado de fecha y eliminación directa desde el detalle.
 - Calendario mensual con totales y consulta por día.
 - Estadísticas reales, comparación con el periodo anterior y gastos frecuentes.
 - Respaldo JSON, exportación CSV e importación con combinación o reemplazo.
 - PWA instalable, adaptable a subcarpetas de GitHub Pages y funcional sin conexión.
 - Tipografía Inter incluida localmente para conservar el mismo peso visual al instalarla.
-- Cuatro paletas mate configurables: Océano, Violeta, Esmeralda y Rubí.
+- Seis paletas mate configurables: Cobalto, Aurora, Jade, Ámbar, Cereza y Grafito.
 - Modo de privacidad para ocultar o mostrar todos los importes desde el icono de ojo.
-- Límites de gasto diario, semanal y mensual con avisos al acercarse o alcanzar el límite.
+- Límites de gasto diario, semanal y mensual con alertas rojas al acercarse o alcanzar el límite.
+- Animaciones breves en los iconos de navegación al cambiar de apartado.
 - Accesibilidad, safe areas, soporte de teclado y reducción de movimiento.
 
 ## Estructura
